@@ -133,6 +133,7 @@ string IRGenerator::generateFunction(FunctionDefinition const& _function)
 	return m_context.functionCollector().createFunction(functionName, [&]() {
 		Whiskers t(R"(
 			function <functionName>(<params>) <returns> {
+				<returnsAlloc>
 				<body>
 			}
 		)");
@@ -142,9 +143,15 @@ string IRGenerator::generateFunction(FunctionDefinition const& _function)
 			params += (params.empty() ? "" : ", ") + m_context.addLocalVariable(*varDecl).commaSeparatedList();
 		t("params", params);
 		string retParams;
+		string retAlloc;
 		for (auto const& varDecl: _function.returnParameters())
+		{
 			retParams += (retParams.empty() ? "" : ", ") + m_context.addLocalVariable(*varDecl).commaSeparatedList();
+			if (!varDecl->type()->isValueType())
+				retAlloc += m_context.localVariable(*varDecl).part("mpos").name() + " := " + m_utils.zeroValueFunction(*varDecl->type()) + "()\n";
+		}
 		t("returns", retParams.empty() ? "" : " -> " + retParams);
+		t("returnsAlloc", retAlloc);
 		t("body", generate(_function.body()));
 		return t.render();
 	});
