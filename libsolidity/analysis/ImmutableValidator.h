@@ -55,7 +55,11 @@ private:
 	bool visit(Return const& _return);
 
 	bool analyseCallable(CallableDeclaration const& _callableDeclaration);
+	void analyseVariableDeclaration(VariableDeclaration const& _variableDeclaration, Expression const& _expression);
+
 	void checkAllVariablesInitialized(langutil::SourceLocation const& _location);
+
+	void visitCallable(Declaration const& _declaration);
 
 	CallableDeclaration const* findFinalOverride(CallableDeclaration const* _functionDefinition);
 
@@ -69,8 +73,8 @@ private:
 	FunctionDefinition const* m_currentConstructor = nullptr;
 	bool m_inLoop = false;
 	bool m_inBranch = false;
-	// whether the current AST element is reachable in construction context
-	bool m_inConstructionContext = false;
+	bool m_readingOfImmutableAllowed = false;
+	bool m_initializationOfImmutableAllowed = false;
 };
 
 }

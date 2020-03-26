@@ -17,44 +17,46 @@
 
 #include <libsolidity/analysis/ImmutableValidator.h>
 
+#include <libsolutil/CommonData.h>
+
 #include <boost/range/adaptor/reversed.hpp>
 
 using namespace solidity::frontend;
 
 void ImmutableValidator::analyze()
 {
-	m_inConstructionContext = true;
+	m_readingOfImmutableAllowed = false;
+	m_initializationOfImmutableAllowed = true;
 
 	for (VariableDeclaration const* stateVar: m_currentContract.stateVariablesIncludingInherited())
 		if (stateVar->value())
 		{
 			stateVar->value()->accept(*this);
-			solAssert(m_initializedStateVariables.insert(stateVar).second, "");
+			solAssert(m_initializedStateVariables.emplace(stateVar).second, "");
 		}
 
-	for (auto const* contract: m_currentContract.annotation().linearizedBaseContracts  | boost::adaptors::reversed)
-	{
-		m_inConstructionContext = true;
+	auto linearizeContracts = m_currentContract.annotation().linearizedBaseContracts  | boost::adaptors::reversed;
 
+	for (auto const* contract: linearizeContracts)
 		if (contract->constructor())
-		{
-			contract->constructor()->accept(*this);
-			m_visitedCallables.insert(contract->constructor());
-		}
+			visitCallable(*contract->constructor());
 
+	m_initializationOfImmutableAllowed = false;
+
+	for (auto const* contract: linearizeContracts)
 		for (std::shared_ptr<InheritanceSpecifier> const inheritSpec: contract->baseContracts())
 			if (auto args = inheritSpec->arguments())
 				ASTNode::listAccept(*args, *this);
 
-		m_inConstructionContext = false;
+	m_readingOfImmutableAllowed = true;
 
+	for (auto const* contract: linearizeContracts)
+	{
 		for (auto funcDef: contract->definedFunctions())
-			if (m_visitedCallables.find(funcDef) == m_visitedCallables.end())
-				funcDef->accept(*this);
+			visitCallable(*funcDef);
 
 		for (auto modDef: contract->functionModifiers())
-			if (m_visitedCallables.find(modDef) == m_visitedCallables.end())
-				modDef->accept(*this);
+			visitCallable(*modDef);
 	}
 
 	checkAllVariablesInitialized(m_currentContract.location());
@@ -65,25 +67,30 @@ bool ImmutableValidator::visit(FunctionDefinition const& _functionDefinition)
 	return analyseCallable(_functionDefinition);
 }
 
-
 bool ImmutableValidator::visit(ModifierDefinition const& _modifierDefinition)
 {
 	return analyseCallable(_modifierDefinition);
 }
 
-
 bool ImmutableValidator::visit(MemberAccess const& _memberAccess)
 {
+	if (
+		_memberAccess.memberName() == "selector" &&
+		dynamic_cast<FunctionType const*>(_memberAccess.expression().annotation().type) &&
+		dynamic_cast<FixedBytesType const*>(_memberAccess.annotation().type)
+	)
+		return false;
+
 	_memberAccess.expression().accept(*this);
 
-	if (auto funcType = dynamic_cast<FunctionType const*>(_memberAccess.annotation().type))
-		if (
-			(funcType->kind() == FunctionType::Kind::Internal ||
-			funcType->kind() == FunctionType::Kind::Declaration) &&
-			funcType->hasDeclaration()
-		)
-			if (m_visitedCallables.insert(dynamic_cast<CallableDeclaration const*>(&funcType->declaration())).second)
-				funcType->declaration().accept(*this);
+	if (auto varDecl = dynamic_cast<VariableDeclaration const*>(_memberAccess.annotation().referencedDeclaration))
+		analyseVariableDeclaration(*varDecl, _memberAccess);
+	else if (auto funcType = dynamic_cast<FunctionType const*>(_memberAccess.annotation().type))
+		if ((
+			funcType->kind() == FunctionType::Kind::Internal ||
+			funcType->kind() == FunctionType::Kind::Declaration
+		) && funcType->hasDeclaration())
+			visitCallable(funcType->declaration());
 
 	return false;
 }
@@ -95,7 +102,6 @@ bool ImmutableValidator::visit(IfStatement const& _ifStatement)
 	_ifStatement.condition().accept(*this);
 
 	m_inBranch = true;
-
 	_ifStatement.trueStatement().accept(*this);
 
 	if (auto falseStatement = _ifStatement.falseStatement())
@@ -105,7 +111,6 @@ bool ImmutableValidator::visit(IfStatement const& _ifStatement)
 
 	return false;
 }
-
 
 bool ImmutableValidator::visit(WhileStatement const& _whileStatement)
 {
@@ -120,59 +125,15 @@ bool ImmutableValidator::visit(WhileStatement const& _whileStatement)
 	return false;
 }
 
-
 bool ImmutableValidator::visit(Identifier const& _identifier)
 {
 	if (auto const callableDef = dynamic_cast<CallableDeclaration const*>(_identifier.annotation().referencedDeclaration))
-	{
-		auto finalDef = findFinalOverride(callableDef);
-
-		if (m_visitedCallables.insert(finalDef).second)
-			finalDef->accept(*this);
-
-		return false;
-	}
-
-	auto const varDecl = dynamic_cast<VariableDeclaration const*>(_identifier.annotation().referencedDeclaration);
-
-	if (!varDecl || !varDecl->isStateVariable() || !varDecl->immutable())
-		return false;
-
-	if (_identifier.annotation().lValueRequested && _identifier.annotation().ordinaryLAssignment)
-	{
-		if (!m_currentConstructor)
-			m_errorReporter.typeError(
-				_identifier.location(),
-				"Immutable variables can only be initialized directly in the constructor.");
-		else if (m_currentConstructor->annotation().contract->id() != varDecl->annotation().contract->id())
-			m_errorReporter.typeError(
-				_identifier.location(),
-				"Immutable variables must be initialized in the constructor of the contract they are defined in.");
-		else if (m_inLoop)
-			m_errorReporter.typeError(
-				_identifier.location(),
-				"Immutable variables can only be initialized once, not in a while statement.");
-		else if (m_inBranch)
-			m_errorReporter.typeError(
-				_identifier.location(),
-				"Immutable variables must be initialized unconditionally, not in an if statement.");
-
-		auto insertResult = m_initializedStateVariables.insert(varDecl);
-
-		if (!insertResult.second)
-			m_errorReporter.typeError(
-				_identifier.location(),
-				"Immutable state variable already initialized."
-			);
-	}
-	else if (m_inConstructionContext)
-		m_errorReporter.typeError(
-			_identifier.location(),
-			"Immutable variables cannot be read in the constructor or any function or modifier called by it.");
+		visitCallable(*findFinalOverride(callableDef));
+	if (auto const varDecl = dynamic_cast<VariableDeclaration const*>(_identifier.annotation().referencedDeclaration))
+		analyseVariableDeclaration(*varDecl, _identifier);
 
 	return false;
 }
-
 
 bool ImmutableValidator::visit(Return const& _return)
 {
@@ -187,7 +148,6 @@ bool ImmutableValidator::visit(Return const& _return)
 	return false;
 }
 
-
 bool ImmutableValidator::analyseCallable(CallableDeclaration const& _callableDeclaration)
 {
 	FunctionDefinition const* prevConstructor = m_currentConstructor;
@@ -198,7 +158,13 @@ bool ImmutableValidator::analyseCallable(CallableDeclaration const& _callableDec
 		if (funcDef->isConstructor())
 			m_currentConstructor = funcDef;
 
+		// Disallow init. in the args of mods/base'ctor calls
+		bool previousInitAllowed = m_initializationOfImmutableAllowed;
+		m_initializationOfImmutableAllowed = false;
+
 		ASTNode::listAccept(funcDef->modifiers(), *this);
+
+		m_initializationOfImmutableAllowed = previousInitAllowed;
 
 		if (funcDef->isImplemented())
 			funcDef->body().accept(*this);
@@ -211,12 +177,57 @@ bool ImmutableValidator::analyseCallable(CallableDeclaration const& _callableDec
 	return false;
 }
 
+void ImmutableValidator::analyseVariableDeclaration(VariableDeclaration const& _variableDeclaration, Expression const& _expression)
+{
+	if (!_variableDeclaration.isStateVariable() || !_variableDeclaration.immutable())
+		return;
+
+	if (_expression.annotation().lValueRequested && _expression.annotation().lValueOfOrdinaryAssignment)
+	{
+		if (!m_currentConstructor)
+			m_errorReporter.typeError(
+				_expression.location(),
+				"Immutable variables can only be initialized inline or directly in the constructor."
+			);
+		else if (m_currentConstructor->annotation().contract->id() != _variableDeclaration.annotation().contract->id())
+			m_errorReporter.typeError(
+				_expression.location(),
+				"Immutable variables must be initialized in the constructor of the contract they are defined in."
+			);
+		else if (m_inLoop)
+			m_errorReporter.typeError(
+				_expression.location(),
+				"Immutable variables can only be initialized once, not in a while statement."
+			);
+		else if (m_inBranch)
+			m_errorReporter.typeError(
+				_expression.location(),
+				"Immutable variables must be initialized unconditionally, not in an if statement."
+			);
+		else if (!m_initializationOfImmutableAllowed)
+			m_errorReporter.typeError(
+				_expression.location(),
+				"Immutable variables must be initialized in the constructor body."
+			);
+
+		if (!m_initializedStateVariables.emplace(&_variableDeclaration).second)
+			m_errorReporter.typeError(
+				_expression.location(),
+				"Immutable state variable already initialized."
+			);
+	}
+	else if (!m_readingOfImmutableAllowed)
+		m_errorReporter.typeError(
+			_expression.location(),
+			"Immutable variables cannot be read during contract creation time, which means they cannot be read in the constructor or any function or modifier called from it."
+		);
+}
 
 void ImmutableValidator::checkAllVariablesInitialized(langutil::SourceLocation const& _location)
 {
 	for (VariableDeclaration const* varDecl: m_currentContract.stateVariablesIncludingInherited())
 		if (varDecl->immutable())
-			if (m_initializedStateVariables.find(varDecl) == m_initializedStateVariables.end())
+			if (!util::contains(m_initializedStateVariables, varDecl))
 				m_errorReporter.typeError(
 					_location,
 					langutil::SecondarySourceLocation().append("Not initialized: ", varDecl->location()),
@@ -224,6 +235,14 @@ void ImmutableValidator::checkAllVariablesInitialized(langutil::SourceLocation c
 				);
 }
 
+void ImmutableValidator::visitCallable(Declaration const& _declaration)
+{
+	CallableDeclaration const* _callable = dynamic_cast<CallableDeclaration const*>(&_declaration);
+	solAssert(_callable != nullptr, "");
+
+	if (m_visitedCallables.emplace(_callable).second)
+		_declaration.accept(*this);
+}
 
 CallableDeclaration const* ImmutableValidator::findFinalOverride(CallableDeclaration const* _callable)
 {

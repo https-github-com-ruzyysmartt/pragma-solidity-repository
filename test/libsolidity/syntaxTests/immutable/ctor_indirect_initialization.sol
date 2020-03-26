@@ -9,4 +9,4 @@ contract C {
     }
 }
 // ----
-// TypeError: (126-127): Immutable variables can only be initialized directly in the constructor.
+// TypeError: (126-127): Immutable variables can only be initialized inline or directly in the constructor.

@@ -6,5 +6,5 @@ contract C {
     }
 }
 // ----
-// TypeError: (76-77): Immutable variables can only be initialized directly in the constructor.
+// TypeError: (76-77): Immutable variables can only be initialized inline or directly in the constructor.
 // TypeError: (76-77): Immutable state variable already initialized.

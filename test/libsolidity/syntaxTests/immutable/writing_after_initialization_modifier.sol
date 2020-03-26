@@ -8,5 +8,5 @@ contract C {
     }
 }
 // ----
-// TypeError: (111-112): Immutable variables can only be initialized directly in the constructor.
+// TypeError: (111-112): Immutable variables can only be initialized inline or directly in the constructor.
 // TypeError: (111-112): Immutable state variable already initialized.
