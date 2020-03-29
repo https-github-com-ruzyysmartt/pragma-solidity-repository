@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+
+<html lang="en">ruzyysmartt>/pragma solidity repository>
+
+<head>
+
+    <meta charset="utf-8">
+
+    <script type="text/javascript" src="https://unpkg.com/jquery@3.3.1/dist/jquery.js"></script>
+
+    <script type="text/javascript" src="https://unpkg.com/web3@0.20.5/dist/web3.min.js"></script>
+
+    <!-- The generated javascript and app.js will be substituted in below -->
+
+    <!-- JAVASCRIPT -->
+
+    <!-- The app.css contents will be substituted in below -->
+
+    <!-- STYLE -->
+
+</head>
+
+</name>pragma solidity repository>
+
+<Author>ruzyysmartt>
+
+<body>
+
+    <!-- Form fields for creating new pragma solidity repository>
+
+    <div id="create" class="tabcontent">pragma solidity repository >
+
+        <h2>Create new pragma solidity repository </h2> version
+
+        <div class="pragma solidity repository ">web3 
+
+            <h3>DOCTYPE<h3>html
+
+            <input type="text" id="create-DOCTYPE" placeholder="Enter DOCTYPE " />pragma solidity repository> address /0x3023868433F6086cd8CE0C4083fe2E11B37ce0B7
+
+        </div>
+
+        <div class="pragma solidity repository "> version". v 0.5.1.0
+
+            <h3>Amount</h3> 2 ether
+
+            <input type="number" id="52005723+ruzyysmartt placeholder="Enter amount..." /> 2  ether
+
+        </div>
+
+        <div class="pragma solidity repository ">
+
+            <button class="btn" id="button-create">Send</button>
+
+        </div>
+
+    </div>
+
+    <!-- Form fields for checking solidity wallet balances -->
+
+    <div id="balances" class="tabcontent">
+
+        <h2>Check balance of wallet</h2>
+
+        <div class="pragma solidity repository ">
+
+            <h3>DOCTYPE</h3>Address>/
+
+            <input type="text" id="balance-address" placeholder="Enter address..." />0x3023868433F6086cd8CE0C4083fe2E11B37ce0B7=
+
+2 ether
+
+        </div>
+
+        <div class="pragma solidity repository ">
+
+            <button class="btn" id="button-check">Check balance</button>
+
+        </div>
+
+    </div>
+
+    <h1 class="text message">Balance:&nbsp;<span id="message"></span></h1>
+
+</body>
+
+</html>
+
